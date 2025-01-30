@@ -1,11 +1,6 @@
 cabal-version:      1.24
 name:               reflex-dom
 version:            0.6.3.1
-license:            BSD3
-license-file:       LICENSE
-maintainer:         ryan.trinkle@gmail.com
-author:             Ryan Trinkle
-stability:          Experimental
 synopsis:           Functional Reactive Web Apps with Reflex
 description:
     Web applications without callbacks or side-effects.
@@ -20,7 +15,11 @@ description:
     All of @reflex-dom-core@'s modules are re-exported by @reflex-dom@.
     .
     For Hackage documentation, please see: <https://hackage.haskell.org/package/reflex-dom-core>.
-
+license:            BSD3
+license-file:       LICENSE
+author:             Ryan Trinkle
+maintainer:         ryan.trinkle@gmail.com
+stability:          Experimental
 category:
     FRP, Web, GUI, HTML, Javascript, Reactive, Reactivity, User Interfaces, User-interface
 
@@ -67,6 +66,11 @@ flag wasm32
     manual:      True
 
 library
+    default-language:   Haskell2010
+    hs-source-dirs:     src
+    cc-options:         -fPIC
+    ghc-options:
+        -Wall -fwarn-tabs -funbox-strict-fields -O2 -ferror-spans -fPIC
     exposed-modules:
         Reflex.Dom
         Reflex.Dom.Internal
@@ -99,12 +103,6 @@ library
         Reflex.Dom.Widget.Resize,
         Reflex.Dom.Xhr,
         Reflex.Dom.Xhr.FormData
-
-    cc-options:         -fPIC
-    hs-source-dirs:     src
-    default-language:   Haskell2010
-    ghc-options:
-        -Wall -fwarn-tabs -funbox-strict-fields -O2 -ferror-spans -fPIC
 
     build-depends:
         base >=4.7 && <4.21,
@@ -187,9 +185,9 @@ executable sortableList
         ghc-options: -fplugin=Reflex.Optimizer
 
 executable benchmark
+    default-language: Haskell2010
     main-is:          benchmark.hs
     hs-source-dirs:   .
-    default-language: Haskell2010
     ghc-options:      -O2 -fspecialise-aggressively
     build-depends:
         base,
