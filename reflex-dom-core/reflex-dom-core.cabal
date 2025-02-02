@@ -118,7 +118,7 @@ library
         Reflex.Dom.Xhr.Exception
     build-depends:
         aeson >=0.8 && <2.3,
-        base >=4.7 && <4.21,
+        base >=4.7 && <4.22,
         bifunctors >=4.2 && <6,
         bimap >=0.3 && <0.6,
         blaze-builder >=0.4.1 && <0.5,
