@@ -105,10 +105,10 @@ library
         Reflex.Dom.Xhr.FormData
 
     build-depends:
-        base >=4.7 && <4.21,
+        base >=4.7 && <4.22,
         bytestring >=0.10 && <0.13,
         reflex >=0.8 && <1,
-        reflex-dom-core >=0.6.1.0 && <0.9,
+        reflex-dom-core >=0.8.1.0 && <0.9,
         text >=1.2 && <2.2
 
     if os(android)
@@ -122,7 +122,7 @@ library
         build-depends:
             aeson >=1.4 && <2.3,
             android-activity >=0.2 && <0.3,
-            data-default >=0.7 && <0.8,
+            data-default >=0.7 && <0.9,
             jsaddle >=0.9.6 && <0.10
 
     if !(impl(ghcjs >=0) || arch(javascript))
@@ -134,7 +134,7 @@ library
         else
             if (os(osx) || os(ios))
                 build-depends:
-                    data-default >=0.7 && <0.8,
+                    data-default >=0.7 && <0.9,
                     jsaddle >=0.9.6 && <0.10,
                     jsaddle-wkwebview >=0.9.6 && <0.10
 
