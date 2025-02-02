@@ -186,7 +186,7 @@ library
         other-extensions: TemplateHaskell
         build-depends:
             dependent-sum-template >=0.1 && <0.3,
-            template-haskell >=2.12.0 && <2.23
+            template-haskell >=2.12.0 && <2.24
 
 test-suite hlint
     default-language: Haskell98
