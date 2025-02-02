@@ -1,5 +1,5 @@
-cabal-version:      1.24
 name:               reflex-dom-core
+cabal-version: 1.24
 version:            0.8.0.0
 synopsis:           Functional Reactive Web Apps with Reflex
 description:
@@ -13,6 +13,7 @@ description:
     correct set of dependencies for each target platform (GHCJS, WebKitGTK, WASM, mobile, etc.).
     Libraries should depend on @reflex-dom-core@ and executables will usually depend on @reflex-dom@.
     All of @reflex-dom-core@'s modules are re-exported by @reflex-dom@.
+
 license:            BSD3
 license-file:       LICENSE
 maintainer:         ryan.trinkle@gmail.com
@@ -42,14 +43,12 @@ flag use-template-haskell
 flag use-reflex-optimizer
     description:
         Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
-
     default:     False
     manual:      True
 
 flag expose-all-unfoldings
     description:
         Build the library with -fexpose-all-unfoldings which can help client code specialize better
-
     default:     False
     manual:      True
 
@@ -64,13 +63,11 @@ flag split-these
 flag hydration-tests
     description:
         Whether to run the hydration tests (currently only available on linux)
-
     manual:      True
 
 flag gc-tests
     description:
         Whether to run the gc tests (currently only available on linux)
-
     manual:      True
 
 flag hlint-tests
@@ -197,11 +194,10 @@ test-suite hlint
     main-is:          hlint.hs
     hs-source-dirs:   test
     build-depends:
-        base,
-        hlint >=2.0 && <4.0
-
-    if arch(javascript) || !flag(hlint-tests
-        buildable: False
+            base,
+            hlint >=2.0 && <4.0
+    if (arch(javascript) || !flag(hlint-tests))
+            buildable: False
 
 test-suite hydration
     default-language: Haskell98

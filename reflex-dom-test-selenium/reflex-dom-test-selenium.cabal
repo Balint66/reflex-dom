@@ -40,5 +40,5 @@ library
     webdriver,
     websockets
 
-    if (!os(linux) || !arch(x86_64))
-        buildable: False
+  if (!os(linux) || !arch(x86_64))
+    buildable: False
