@@ -29,6 +29,7 @@
 {-# LANGUAGE JavaScriptFFI #-}
 #endif
 #endif
+{-# LANGUAGE ViewPatterns #-}
 
 -- | This is a builder to be used on the client side. It can be run in two modes:
 --
@@ -159,7 +160,7 @@ import GHCJS.DOM.Node (appendChild_, getOwnerDocumentUnchecked, getParentNodeUnc
 import GHCJS.DOM.Types (liftJSM, askJSM, runJSM, JSM, MonadJSM, FocusEvent, IsElement, IsEvent, IsNode, Node, TouchEvent, WheelEvent, uncheckedCastTo)
 import GHCJS.DOM.UIEvent
 #ifndef ghcjs_HOST_OS
-import Language.Javascript.JSaddle (call, eval) -- Avoid using eval in ghcjs. Use ffi instead
+import qualified Language.Javascript.JSaddle as JS
 #endif
 import Reflex.Adjustable.Class
 import Reflex.Class as Reflex
@@ -293,7 +294,7 @@ data HydrationState = HydrationState
   }
 
 {-# INLINABLE localRunner #-}
-localRunner :: (MonadJSM m, Monad m) => HydrationRunnerT t m a -> Maybe Node -> Node -> HydrationRunnerT t m a
+localRunner :: MonadJSM m => HydrationRunnerT t m a -> Maybe Node -> Node -> HydrationRunnerT t m a
 localRunner (HydrationRunnerT m) s parent = do
   s0 <- HydrationRunnerT get
   (a, s') <- HydrationRunnerT $ lift $ local (\_ -> parent) $ runStateT m (s0 { _hydrationState_previousNode = s })
@@ -303,13 +304,13 @@ localRunner (HydrationRunnerT m) s parent = do
 
 {-# INLINABLE runHydrationRunnerT #-}
 runHydrationRunnerT
-  :: (MonadRef m, Ref m ~ IORef, Monad m, PerformEvent t m, MonadFix m, MonadReflexCreateTrigger t m, MonadJSM m, MonadJSM (Performable m))
+  :: (MonadRef m, Ref m ~ IORef, PerformEvent t m, MonadFix m, MonadReflexCreateTrigger t m, MonadJSM m, MonadJSM (Performable m))
   => HydrationRunnerT t m a -> Maybe Node -> Node -> Chan [DSum (EventTriggerRef t) TriggerInvocation] -> m a
 runHydrationRunnerT m = runHydrationRunnerTWithFailure m (pure ())
 
 {-# INLINABLE runHydrationRunnerTWithFailure #-}
 runHydrationRunnerTWithFailure
-  :: (MonadRef m, Ref m ~ IORef, Monad m, PerformEvent t m, MonadFix m, MonadReflexCreateTrigger t m, MonadJSM m, MonadJSM (Performable m))
+  :: (MonadRef m, Ref m ~ IORef, PerformEvent t m, MonadFix m, MonadReflexCreateTrigger t m, MonadJSM m, MonadJSM (Performable m))
   => HydrationRunnerT t m a -> IO () -> Maybe Node -> Node -> Chan [DSum (EventTriggerRef t) TriggerInvocation] -> m a
 runHydrationRunnerTWithFailure (HydrationRunnerT m) onFailure s parent events = flip runDomRenderHookT events $ flip runReaderT parent $ do
   (a, s') <- runStateT m (HydrationState s False)
@@ -367,7 +368,7 @@ newtype DomRenderHookT t m a = DomRenderHookT { unDomRenderHookT :: RequesterT t
 
 {-# INLINABLE runDomRenderHookT #-}
 runDomRenderHookT
-  :: (MonadFix m, PerformEvent t m, MonadReflexCreateTrigger t m, MonadJSM m, MonadJSM (Performable m), MonadRef m, Ref m ~ IORef)
+  :: (MonadFix m, PerformEvent t m, MonadReflexCreateTrigger t m, MonadJSM (Performable m), MonadRef m, Ref m ~ IORef)
   => DomRenderHookT t m a
   -> Chan [DSum (EventTriggerRef t) TriggerInvocation]
   -> m a
@@ -399,7 +400,6 @@ runHydrationDomBuilderT
   :: ( MonadFix m
      , PerformEvent t m
      , MonadReflexCreateTrigger t m
-     , MonadJSM m
      , MonadJSM (Performable m)
      , MonadRef m
      , Ref m ~ IORef
@@ -482,9 +482,15 @@ foreign import javascript unsafe
   removeSubsequentNodes_ :: DOM.Node -> IO ()
 removeSubsequentNodes n = liftJSM $ removeSubsequentNodes_ (toNode n)
 #else
-removeSubsequentNodes n = liftJSM $ do
-  f <- eval ("(function(n) { while (n.nextSibling) { (n.parentNode).removeChild(n.nextSibling); }; })" :: Text)
-  void $ call f f [n]
+removeSubsequentNodes (toNode -> n) = liftJSM go
+  where
+    go = do
+      x <- n ^. JS.js ("nextSibling" :: Text)
+      JS.ghcjsPure (JS.isTruthy x) >>= \case
+        False -> pure ()
+        True -> do
+          _ <- n ^. JS.js ("parentNode" :: Text) . JS.js1 ("removeChild" :: Text) x
+          go
 #endif
 
 -- | s and e must both be children of the same node and s must precede e;
@@ -509,9 +515,15 @@ foreign import javascript unsafe
   extractBetweenExclusive_ :: DOM.DocumentFragment -> DOM.Node -> DOM.Node -> IO ()
 extractBetweenExclusive df s e = liftJSM $ extractBetweenExclusive_ df (toNode s) (toNode e)
 #else
-extractBetweenExclusive df s e = liftJSM $ do
-  f <- eval ("(function(df,s,e) { var x; for(;;) { x = s['nextSibling']; if(e===x) { break; }; df['appendChild'](x); } })" :: Text)
-  void $ call f f (df, s, e)
+extractBetweenExclusive df (toNode -> s) (toNode -> e) = liftJSM go
+  where
+    go = do
+      x <- s ^. JS.js ("nextSibling" :: Text)
+      JS.strictEqual e x >>= \case
+        True -> pure ()
+        False -> do
+          _ <- df ^. JS.js1 ("appendChild" :: Text) x
+          go
 #endif
 
 -- | s and e must both be children of the same node and s must precede e;
@@ -529,14 +541,19 @@ foreign import javascript unsafe
 #if __GLASGOW_HASKELL__ < 900
   "(function() { var x = $2; while(x !== $3) { var y = x['nextSibling']; $1['appendChild'](x); x = y; } })()"
 #else
-  "(function(_, x, $3) { while(x !== $3) { var y = x['nextSibling']; $1['appendChild'](x); x = y; } })"
+  "(function($1, x, $3) { while(x !== $3) { var y = x['nextSibling']; $1['appendChild'](x); x = y; } })"
 #endif
   extractUpTo_ :: DOM.DocumentFragment -> DOM.Node -> DOM.Node -> IO ()
 extractUpTo df s e = liftJSM $ extractUpTo_ df (toNode s) (toNode e)
 #else
-extractUpTo df s e = liftJSM $ do
-  f <- eval ("(function(df,s,e){ var x = s; var y; for(;;) { y = x['nextSibling']; df['appendChild'](x); if(e===y) { break; } x = y; } })" :: Text)
-  void $ call f f (df, s, e)
+extractUpTo df (JS.toJSVal -> s) (JS.toJSVal -> e) = liftJSM $ go s
+  where
+    go x = JS.strictEqual x e >>= \case
+      True -> pure ()
+      False -> do
+        y <- x ^. JS.js ("nextSibling" :: Text)
+        _ <- df ^. JS.js1 ("appendChild" :: Text) x
+        go (pure y)
 #endif
 
 type SupportsHydrationDomBuilder t m = (Reflex t, MonadJSM m, MonadHold t m, MonadFix m, MonadReflexCreateTrigger t m, MonadRef m, Ref m ~ Ref JSM, Adjustable t m, PrimMonad m, PerformEvent t m, MonadJSM (Performable m))
@@ -560,7 +577,7 @@ newtype EventFilterTriggerRef t er (en :: EventTag) = EventFilterTriggerRef (IOR
 -- | This 'wrap' is only partial: it doesn't create the 'EventSelector' itself
 {-# INLINE wrap #-}
 wrap
-  :: forall s m er t. (Reflex t, MonadJSM m, MonadReflexCreateTrigger t m, DomRenderHook t m, EventSpec s ~ GhcjsEventSpec)
+  :: forall s m er t. (MonadJSM m, DomRenderHook t m, EventSpec s ~ GhcjsEventSpec)
   => Chan [DSum (EventTriggerRef t) TriggerInvocation]
   -> DOM.Element
   -> RawElementConfig er t s
@@ -1058,8 +1075,7 @@ inputElementInternal cfg = getHydrationMode >>= \case
 {-# INLINE textAreaElementImmediate #-}
 textAreaElementImmediate
   :: ( RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document, EventSpec s ~ GhcjsEventSpec
-     , MonadJSM m, Reflex t, MonadReflexCreateTrigger t m, MonadFix m, MonadHold t m
-     , MonadRef m, Ref m ~ IORef )
+     , MonadJSM m, Reflex t, MonadReflexCreateTrigger t m, MonadFix m, MonadHold t m)
   => TextAreaElementConfig er t s -> HydrationDomBuilderT s t m (TextAreaElement er GhcjsDomSpace t)
 textAreaElementImmediate cfg = do
   (e@(Element eventSelector domElement), _) <- elementImmediate "textarea" (cfg ^. textAreaElementConfig_elementConfig) $ return ()
@@ -1258,7 +1274,7 @@ textNodeImmediate (TextNodeConfig !t mSetContents) = do
 
 {-# INLINE textNodeInternal #-}
 textNodeInternal
-  :: (Adjustable t m, MonadHold t m, MonadJSM m, MonadFix m, Reflex t)
+  :: (Adjustable t m, MonadHold t m, MonadJSM m, MonadFix m)
   => TextNodeConfig t -> HydrationDomBuilderT HydrationDomSpace t m (TextNode HydrationDomSpace t)
 textNodeInternal tc@(TextNodeConfig !t mSetContents) = do
   doc <- askDocument
@@ -1326,7 +1342,7 @@ commentNodeImmediate (CommentNodeConfig !t mSetContents) = do
 
 {-# INLINE commentNodeInternal #-}
 commentNodeInternal
-  :: (Ref m ~ IORef, MonadRef m, PerformEvent t m, MonadReflexCreateTrigger t m, MonadJSM (Performable m), MonadJSM m, MonadFix m, Reflex t, Adjustable t m, MonadHold t m, MonadSample t m)
+  :: (Ref m ~ IORef, MonadRef m, PerformEvent t m, MonadReflexCreateTrigger t m, MonadJSM (Performable m), MonadJSM m, MonadFix m, Adjustable t m, MonadHold t m)
   => CommentNodeConfig t -> HydrationDomBuilderT HydrationDomSpace t m (CommentNode HydrationDomSpace t)
 commentNodeInternal tc@(CommentNodeConfig t0 mSetContents) = do
   doc <- askDocument
@@ -1365,7 +1381,7 @@ hydrateComment doc t mSetContents = do
 -- out at hydration time, replacing them with empty text nodes.
 {-# INLINABLE skipToAndReplaceComment #-}
 skipToAndReplaceComment
-  :: (MonadJSM m, Reflex t, MonadFix m, Adjustable t m, MonadHold t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document)
+  :: (MonadJSM m, MonadFix m, Adjustable t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document)
   => Text
   -> IORef (Maybe Text)
   -> HydrationDomBuilderT s t m (HydrationRunnerT t m (), IORef DOM.Text, IORef (Maybe Text))
@@ -1415,11 +1431,11 @@ skipToAndReplaceComment prefix key0Ref = getHydrationMode >>= \case
     pure (switchComment, textNodeRef, keyRef)
 
 {-# INLINABLE skipToReplaceStart #-}
-skipToReplaceStart :: (MonadJSM m, Reflex t, MonadFix m, Adjustable t m, MonadHold t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document) => HydrationDomBuilderT s t m (HydrationRunnerT t m (), IORef DOM.Text, IORef (Maybe Text))
+skipToReplaceStart :: (MonadJSM m, MonadFix m, Adjustable t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document) => HydrationDomBuilderT s t m (HydrationRunnerT t m (), IORef DOM.Text, IORef (Maybe Text))
 skipToReplaceStart = skipToAndReplaceComment "replace-start" =<< liftIO (newIORef $ Just "") -- TODO: Don't rely on clever usage @""@ to make this work.
 
 {-# INLINABLE skipToReplaceEnd #-}
-skipToReplaceEnd :: (MonadJSM m, Reflex t, MonadFix m, Adjustable t m, MonadHold t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document) => IORef (Maybe Text) -> HydrationDomBuilderT s t m (HydrationRunnerT t m (), IORef DOM.Text)
+skipToReplaceEnd :: (MonadJSM m, MonadFix m, Adjustable t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document) => IORef (Maybe Text) -> HydrationDomBuilderT s t m (HydrationRunnerT t m (), IORef DOM.Text)
 skipToReplaceEnd key = fmap (\(m,e,_) -> (m,e)) $ skipToAndReplaceComment "replace-end" key
 
 instance SupportsHydrationDomBuilder t m => NotReady t (HydrationDomBuilderT s t m) where
@@ -1549,7 +1565,7 @@ instance (Reflex t, Monad m, Adjustable t m, MonadHold t m, MonadFix m) => Adjus
   traverseDMapWithKeyWithAdjust f m = DomRenderHookT . traverseDMapWithKeyWithAdjust (\k -> unDomRenderHookT . f k) m
   traverseDMapWithKeyWithAdjustWithMove f m = DomRenderHookT . traverseDMapWithKeyWithAdjustWithMove (\k -> unDomRenderHookT . f k) m
 
-instance (Adjustable t m, MonadJSM m, MonadHold t m, MonadFix m, PrimMonad m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document) => Adjustable t (HydrationDomBuilderT s t m) where
+instance (Adjustable t m, MonadJSM m, MonadHold t m, MonadFix m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document) => Adjustable t (HydrationDomBuilderT s t m) where
   {-# INLINABLE runWithReplace #-}
   runWithReplace a0 a' = do
     initialEnv <- HydrationDomBuilderT ask
@@ -1711,7 +1727,7 @@ instance (Adjustable t m, MonadJSM m, MonadHold t m, MonadFix m, PrimMonad m, Ra
 
 {-# INLINABLE traverseDMapWithKeyWithAdjust' #-}
 traverseDMapWithKeyWithAdjust'
-  :: forall s t m (k :: Type -> Type) v v'. (Adjustable t m, MonadHold t m, MonadFix m, MonadJSM m, PrimMonad m, GCompare k, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document)
+  :: forall s t m (k :: Type -> Type) v v'. (Adjustable t m, MonadHold t m, MonadFix m, MonadJSM m, GCompare k, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document)
   => (forall a. k a -> v a -> HydrationDomBuilderT s t m (v' a))
   -> DMap k v
   -> Event t (PatchDMap k v)
@@ -1757,7 +1773,7 @@ traverseDMapWithKeyWithAdjust' = do
 
 {-# INLINABLE traverseIntMapWithKeyWithAdjust' #-}
 traverseIntMapWithKeyWithAdjust'
-  :: forall s t m v v'. (Adjustable t m, MonadJSM m, MonadFix m, PrimMonad m, MonadHold t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document)
+  :: forall s t m v v'. (Adjustable t m, MonadJSM m, MonadFix m, MonadHold t m, RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document)
   => (IntMap.Key -> v -> HydrationDomBuilderT s t m v')
   -> IntMap v
   -> Event t (PatchIntMap v)
@@ -1819,7 +1835,7 @@ data ChildReadyState a
    | ChildReadyState_Unready !(Maybe a)
    deriving (Show, Read, Eq, Ord)
 
-insertAfterPreviousNode :: (Monad m, MonadJSM m) => DOM.IsNode node => node -> HydrationRunnerT t m ()
+insertAfterPreviousNode :: MonadJSM m => DOM.IsNode node => node -> HydrationRunnerT t m ()
 insertAfterPreviousNode node = do
   parent <- askParent
   nextNode <- maybe (Node.getFirstChild parent) Node.getNextSibling =<< getPreviousNode
@@ -1832,13 +1848,8 @@ hoistTraverseWithKeyWithAdjust
   ( Adjustable t m
   , MonadHold t m
   , GCompare k
-  , MonadIO m
   , MonadJSM m
-  , PrimMonad m
   , MonadFix m
-  , Patch (p k v)
-  , Patch (p k (Constant Int))
-  , PatchTarget (p k (Constant Int)) ~ DMap k (Constant Int)
   , Patch (p k (Compose (TraverseChild t m (Some k)) v'))
   , PatchTarget (p k (Compose (TraverseChild t m (Some k)) v')) ~ DMap k (Compose (TraverseChild t m (Some k)) v')
   , Monoid (p k (Compose (TraverseChild t m (Some k)) v'))
@@ -1942,12 +1953,9 @@ hoistTraverseIntMapWithKeyWithAdjust ::
   , MonadHold t m
   , MonadJSM m
   , MonadFix m
-  , PrimMonad m
   , Monoid (p (TraverseChild t m Int v'))
   , Functor p
-  , PatchTarget (p (HydrationRunnerT t m ())) ~ IntMap (HydrationRunnerT t m ())
   , PatchTarget (p (TraverseChild t m Int v')) ~ IntMap (TraverseChild t m Int v')
-  , Patch (p (HydrationRunnerT t m ()))
   , Patch (p (TraverseChild t m Int v'))
   , RawDocument (DomBuilderSpace (HydrationDomBuilderT s t m)) ~ Document
   )
@@ -2100,7 +2108,7 @@ data TraverseChild t m k a = TraverseChild
   } deriving Functor
 
 {-# INLINABLE drawChildUpdate #-}
-drawChildUpdate :: (MonadJSM m, Reflex t)
+drawChildUpdate :: MonadJSM m
   => HydrationDomBuilderEnv t m
   -> (IORef (ChildReadyState k) -> JSM ()) -- This will NOT be called if the child is ready at initialization time; instead, the ChildReadyState return value will be ChildReadyState_Ready
   -> HydrationDomBuilderT s t m (f a)
@@ -2162,7 +2170,7 @@ drawChildUpdate initialEnv markReady child = do
   #-}
 
 {-# INLINABLE drawChildUpdateInt #-}
-drawChildUpdateInt :: (MonadIO m, MonadJSM m, Reflex t)
+drawChildUpdateInt :: MonadJSM m
   => HydrationDomBuilderEnv t m
   -> (IORef (ChildReadyState k) -> JSM ())
   -> HydrationDomBuilderT s t m v
