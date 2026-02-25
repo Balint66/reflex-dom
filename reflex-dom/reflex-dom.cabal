@@ -168,6 +168,7 @@ executable sortableList
         dependent-map <0.5,
         lens <5.4,
         mtl,
+        patch,
         random <1.3,
         reflex <0.10,
         reflex-dom,
