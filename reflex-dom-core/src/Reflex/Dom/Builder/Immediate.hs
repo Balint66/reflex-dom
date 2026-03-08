@@ -888,7 +888,9 @@ hydrateElement elementTag cfg child = do
     liftIO $ writeIORef e' e
     -- Setup events, store the result so we can wait on it later
     refs <- wrap events e rawCfg
-    liftIO $ putMVar wrapResult (e, refs)
+    liftIO $ do
+          b <- tryPutMVar wrapResult (e, refs)
+          when b (() <$ swapMVar wrapResult (e, refs))
     localRunner childDom Nothing $ toNode e
   -- We need the EventSelector to switch to the real event handler after activation
   es <- newFanEventWithTrigger $ \(WrapArg en) t -> do
