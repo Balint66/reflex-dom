@@ -173,6 +173,8 @@ import Data.Text.Encoding
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Builder as B
 import Data.Traversable
+import Data.IORef
+import Data.Foldable (forM_, Foldable (toList))
 
 import Language.Javascript.JSaddle.Monad (JSM, askJSM, runJSM, MonadJSM, liftJSM)
 
@@ -344,14 +346,36 @@ performMkRequestsAsync :: (MonadJSM (Performable m), PerformEvent t m, TriggerEv
 performMkRequestsAsync = performRequestsAsync' newXMLHttpRequest
 
 performRequestsAsync' :: (MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, Traversable f) => (XhrRequest b -> (a -> JSM ()) -> Performable m XMLHttpRequest) -> Event t (Performable m (f (XhrRequest b))) -> m (Event t (f a))
-performRequestsAsync' newXhr req = performEventAsync $ ffor req $ \hrs cb -> do
-  rs <- hrs
-  resps <- forM rs $ \r -> do
-    resp <- liftIO newEmptyMVar
-    _ <- newXhr r $ liftIO . putMVar resp
-    return resp
-  _ <- liftIO $ forkIO $ cb =<< forM resps takeMVar
-  return ()
+performRequestsAsync' newXhr reqP = do
+  req <- performEvent reqP
+  performEventAsync $ ffor req $ \rs cb -> do
+    cells <- liftIO $ for rs (const (newIORef Nothing))
+    completedRef <- liftIO $ newIORef (0 :: Int)
+    let n :: Int
+        n = length rs
+
+        finalize :: IO ()
+        finalize = do
+          outF <- for cells $ \cell -> do
+            mx <- readIORef cell
+            case mx of
+              Just x  -> pure x
+              Nothing -> error "performRequestsAsync': invariant violated (missing element)"
+          cb outF
+
+        markDone :: IO ()
+        markDone = do
+          c' <- atomicModifyIORef' completedRef (\c -> let d = c + 1 in (d, d))
+          when (c' == n) finalize
+
+
+    forM_ (zip (toList cells) (toList rs)) $ \(cell, e) -> do
+      -- The xhr runner invokes our callback when ready
+      _ <- newXhr e $ \resp -> liftIO $ do
+              writeIORef cell (Just resp)
+              markDone
+      pure ()
+
 
 -- | Simplified interface to "GET" URLs and return decoded results.
 getAndDecode :: (MonadIO m, MonadJSM (Performable m), PerformEvent t m, TriggerEvent t m, FromJSON a) => Event t Text -> m (Event t (Maybe a))

@@ -892,7 +892,7 @@ hydrateElement elementTag cfg child = do
     localRunner childDom Nothing $ toNode e
   -- We need the EventSelector to switch to the real event handler after activation
   es <- newFanEventWithTrigger $ \(WrapArg en) t -> do
-    cleanup <- newEmptyMVar
+    cleanup <- newIORef Nothing
     threadId <- forkIO $ do
       -- Wait on the data we need from the delayed action
       (e, eventTriggerRefs) <- readMVar wrapResult
@@ -901,12 +901,12 @@ hydrateElement elementTag cfg child = do
         (triggerBody ctx rawCfg events eventTriggerRefs e (WrapArg en) t)
         -- Run the cleanup, if we have it - but only when an exception is
         -- raised (we might get killed between acquiring the cleanup action
-        -- from 'triggerBody' and putting it in the MVar)
+        -- from 'triggerBody' and putting it in the IORef)
         id
-        -- Try to put this action into the cleanup MVar
-        (putMVar cleanup)
+        -- Put this action into the cleanup IORef
+        (writeIORef cleanup . Just)
     pure $ do
-      tryReadMVar cleanup >>= \case
+      readIORef cleanup >>= \case
         Nothing -> killThread threadId
         Just c -> c
   return ((Element es (), result), e')
