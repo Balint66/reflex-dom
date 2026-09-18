@@ -105,31 +105,41 @@ library
         Reflex.Dom.Xhr.FormData
 
     build-depends:
-        base >=4.7 && <4.22,
-        bytestring >=0.10 && <0.13,
-        reflex >=0.8 && <1,
-        reflex-dom-core >=0.8.1.0 && <0.9,
-        text >=1.2 && <2.2
-
-    if os(android)
-        build-tools:      hsc2hs >=0
-        cpp-options:      -DANDROID
-        c-sources:        cbits/MainWidget.c
-        hs-source-dirs:   src-android
-        other-modules:    Reflex.Dom.Android.MainWidget
-        include-dirs:     cbits/include
-        install-includes: MainWidget.h
+      aeson >= 1.4 && < 2.3,
+      android-activity == 0.2.*,
+      data-default >= 0.7 && < 0.9,
+      jsaddle >= 0.9.6 && < 0.10
+    c-sources: cbits/MainWidget.c
+    include-dirs: cbits/include
+    install-includes: MainWidget.h
+    cpp-options: -DANDROID
+    build-tools: hsc2hs
+  build-depends:
+    base >= 4.7 && < 4.23,
+    bytestring >= 0.10 && < 0.13,
+    reflex >= 0.8 && < 1,
+    reflex-dom-core >= 0.8.1.0 && <0.9,
+    text >= 1.2 && < 2.2
+  if !(impl(ghcjs) || arch(javascript))
+    if flag(use-warp)
+      build-depends:
+        jsaddle >= 0.9.6 && < 0.10,
+        jsaddle-warp >= 0.9.6 && < 0.10
+    else
+      if os(osx) || os(ios)
         build-depends:
-            aeson >=1.4 && <2.3,
-            android-activity >=0.2 && <0.3,
-            data-default >=0.7 && <0.9,
-            jsaddle >=0.9.6 && <0.10
-
-    if !(impl(ghcjs >=0) || arch(javascript))
-        if flag(use-warp)
+          data-default >= 0.7 && < 0.9,
+          jsaddle >= 0.9.6 && < 0.10,
+          jsaddle-wkwebview >= 0.9.6 && < 0.10
+      else
+        if arch(wasm32)
+          build-depends:
+            jsaddle >= 0.9.6 && < 0.10,
+            jsaddle-wasm >= 0.1 && < 0.3
+        else
+          if flag(webkit2gtk) && !os(android)
             build-depends:
-                jsaddle >=0.9.6 && <0.10,
-                jsaddle-warp >=0.9.6 && <0.10
+              jsaddle-webkit2gtk >= 0.9.6 && < 0.10
 
         else
             if (os(osx) || os(ios))
@@ -164,15 +174,15 @@ executable sortableList
 
     build-depends:
         base,
-        containers <0.8,
-        dependent-map <0.5,
-        lens <5.4,
+        containers,
+        dependent-map,
+        lens,
         mtl,
         patch,
-        random <1.3,
-        reflex <0.10,
+        random,
+        reflex,
         reflex-dom,
-        text <2.2,
+        text,
         time,
         transformers
 
@@ -192,17 +202,17 @@ executable benchmark
     ghc-options:      -O2 -fspecialise-aggressively
     build-depends:
         base,
-        containers <0.8,
-        dependent-map <0.5,
-        dependent-sum <0.8,
+        containers,
+        dependent-map,
+        dependent-sum,
         ghc-prim,
-        ghcjs-dom <0.10,
+        ghcjs-dom,
         mtl,
-        prim-uniq <0.3,
-        random <1.3,
-        reflex <0.10,
+        prim-uniq,
+        random,
+        reflex,
         reflex-dom,
-        text <2.2,
+        text,
         transformers
 
     if !impl(ghcjs >=0)
@@ -215,19 +225,19 @@ executable krausest
     ghc-options:      -O2 -fspecialise-aggressively
     build-depends:
         base,
-        containers <0.8,
-        dependent-map <0.5,
-        dependent-sum <0.8,
+        containers,
+        dependent-map,
+        dependent-sum,
         ghc-prim,
-        ghcjs-dom <0.10,
+        ghcjs-dom,
         mtl,
-        prim-uniq <0.3,
-        random <1.3,
-        reflex <0.10,
+        prim-uniq,
+        random,
+        reflex,
         reflex-dom,
-        text <2.2,
+        text,
         transformers,
-        vector <0.14
+        vector
 
     if impl(ghcjs >=0)
         cpp-options:   -DGHCJS_BROWSER -DGHCJS_GC_INTERVAL=60000

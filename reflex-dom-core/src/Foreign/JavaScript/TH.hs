@@ -40,6 +40,7 @@ import GHCJS.DOM.Types (MonadJSM)
 import qualified GHCJS.Buffer as JS
 import qualified GHCJS.DOM.Types as JS
 import qualified GHCJS.Foreign as JS
+#endif
 #if __GLASGOW_HASKELL__ < 900
 import qualified GHCJS.Foreign.Callback as JS
 import qualified GHCJS.Foreign.Callback.Internal (Callback (..))
