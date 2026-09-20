@@ -92,10 +92,8 @@ instance MonadSubscribeEvent t m => MonadSubscribeEvent t (WithJSContextSingleto
 
 instance MonadReflexHost t m => MonadReflexHost t (WithJSContextSingleton x m) where
   type ReadPhase (WithJSContextSingleton x m) = ReadPhase m
-  {-# INLINABLE fireEventsAndRead #-}
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  {-# INLINABLE runHostFrame #-}
-  runHostFrame = lift . runHostFrame
+  {-# INLINABLE hostFrameAndRead #-}
+  hostFrameAndRead frame input = lift . hostFrameAndRead frame input
 
 instance MonadSample t m => MonadSample t (WithJSContextSingleton x m) where
   {-# INLINABLE sample #-}
