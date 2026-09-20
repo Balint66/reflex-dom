@@ -130,10 +130,10 @@ instance (Adjustable t m, PrerenderBaseConstraints t m, ReflexHost t) => Prerend
     (a', trigger) <- newTriggerEvent
     getHydrationMode >>= \case
       HydrationMode_Immediate -> do
-        liftIO . trigger <=< lift $ runHydrationDomBuilderT (runPostBuildT client $ void a') clientEnv events
+        liftIO . trigger <=< lift $ runHydrationDomBuilderT (runPostBuildT client) clientEnv events
         append $ DOM.toNode df
       HydrationMode_Hydrating -> addHydrationStep $ do
-        liftIO . trigger <=< lift $ runHydrationDomBuilderT (runPostBuildT client $ void a') clientEnv events
+        liftIO . trigger <=< lift $ runHydrationDomBuilderT (runPostBuildT client) clientEnv events
         insertBefore df =<< deleteToPrerenderEnd doc
     holdDyn a0 a'
 
@@ -198,7 +198,7 @@ instance Monad m => MonadIO (UnrunnableT t m) where
 instance Monad m => MonadJSM (UnrunnableT t m) where
   liftJSM' _ = unrunnable
 #endif
-instance (Reflex t, Monad m) => PostBuild t (UnrunnableT t m) where
+instance (Reflex t, MonadHold t m, Monad m) => PostBuild t (UnrunnableT t m) where
   getPostBuild = unrunnable
 instance Monad m => PrimMonad (UnrunnableT t m) where
   type PrimState (UnrunnableT t m) = PrimState IO
@@ -255,7 +255,7 @@ instance (Prerender t m, MonadFix m, Reflex t) => Prerender t (RequesterT t requ
     responses <- fmap (fmapCheap unMultiEntry) $ requesting' $ fmapCheap multiEntry $ switchPromptlyDyn requestsDyn
     return result
 
-instance (Prerender t m, Monad m, Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q) => Prerender t (QueryT t q m) where
+instance (Prerender t m, MonadHold t m, Monad m, Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q) => Prerender t (QueryT t q m) where
   type Client (QueryT t q m) = QueryT t q (Client m)
   prerender server client = mdo
     result <- queryDyn query
@@ -274,9 +274,8 @@ instance Prerender t m => Prerender t (HydratableT m) where
 
 instance (Prerender t m, Monad m, ReflexHost t) => Prerender t (PostBuildT t m) where
   type Client (PostBuildT t m) = PostBuildT t (Client m)
-  prerender server client = PostBuildT $ do
-    pb <- ask
-    lift $ prerender (runPostBuildT server pb) (runPostBuildT client pb)
+  prerender server client = PostBuildT $ 
+    prerender (runPostBuildT server) (runPostBuildT client)
 
 startMarker, endMarker :: Text
 startMarker = "prerender/start"
