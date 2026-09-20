@@ -398,8 +398,8 @@ renderStatic w = do
     (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
     nextRunWithReplaceKey <- newRef 0
     let env0 = StaticDomBuilderEnv True Nothing nextRunWithReplaceKey
-    ((res, bs), FireCommand fire) <- hostPerformEventT $ runStaticDomBuilderT (runPostBuildT w postBuild) env0
+    ((res, bs), fc) <- hostPerformEventT $ runStaticDomBuilderT (runPostBuildT w) env0
     mPostBuildTrigger <- readRef postBuildTriggerRef
-    forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
-    bs' <- sample bs
+    forM_ mPostBuildTrigger $ \postBuildTrigger -> runFireCommand fc [postBuildTrigger :=> Identity ()]
+    bs' <- runHostFrame $ sample bs
     return (res, LBS.toStrict $ toLazyByteString bs')
