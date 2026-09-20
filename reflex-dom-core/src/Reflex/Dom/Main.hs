@@ -119,18 +119,18 @@ attachHydrationWidgetWithFailure onFailure switchoverAction jsSing w = do
   events <- newChan
   runDomHost $ flip runTriggerEventT events $ mdo
     (syncEvent, fireSync) <- newTriggerEvent
-    ((result, postBuildTriggerRef), fc@(FireCommand fire)) <- lift $ hostPerformEventT $ do
+    ((result, postBuildTriggerRef), fc) <- lift $ hostPerformEventT $ do
       a <- w syncEvent hydrationMode (Just rootNodesRef) events
       _ <- runWithReplace (return ()) $ delayedAction <$ syncEvent
       pure a
     mPostBuildTrigger <- readRef postBuildTriggerRef
-    lift $ forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
+    lift $ forM_ mPostBuildTrigger $ \postBuildTrigger -> runFireCommand fc [postBuildTrigger :=> Identity ()]
     liftIO $ fireSync ()
     rootNodes <- liftIO $ readIORef rootNodesRef
     let delayedAction = do
           for_ (reverse rootNodes) $ \(rootNode, runner) -> do
             let hydrate = runHydrationRunnerTWithFailure runner onFailure Nothing rootNode events
-            void $ runWithJSContextSingleton (runPostBuildT hydrate never) jsSing
+            void $ runWithJSContextSingleton (runPostBuildT hydrate) jsSing
           liftIO $ writeIORef hydrationMode HydrationMode_Immediate
           runWithJSContextSingleton (DOM.liftJSM switchoverAction) jsSing
     pure (result, fc)
@@ -186,7 +186,7 @@ runHydrationWidgetWithHeadAndBodyWithFailure onFailure switchoverAction app = wi
               res <- liftIO $ readIORef delayed
               liftIO $ modifyIORef' hr ((n, res) :)
             pure a
-    runWithJSContextSingleton (runPostBuildT (runTriggerEventT (app (hydrateDom $ toNode headElement) (hydrateDom $ toNode bodyElement)) events) postBuild) jsSing
+    runWithJSContextSingleton (runPostBuildT (runTriggerEventT (app (hydrateDom $ toNode headElement) (hydrateDom $ toNode bodyElement)) events)) jsSing
     return (events, postBuildTriggerRef)
   liftIO $ processAsyncEvents events fc
 
@@ -276,7 +276,7 @@ runImmediateWidgetWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> 
                 , _hydrationDomBuilderEnv_delayed = delayed
                 }
           lift $ runHydrationDomBuilderT w builderEnv events
-    runWithJSContextSingleton (runPostBuildT (runTriggerEventT (app (go headFragment) (go bodyFragment)) events) postBuild) jsSing
+    runWithJSContextSingleton (runPostBuildT (runTriggerEventT (app (go headFragment) (go bodyFragment)) events)) jsSing
     return (events, postBuildTriggerRef)
   replaceElementContents headElement headFragment
   replaceElementContents bodyElement bodyFragment
@@ -313,7 +313,7 @@ attachWidget' rootElement jsSing w = do
           , _hydrationDomBuilderEnv_delayed = delayed
           , _hydrationDomBuilderEnv_hydrationMode = hydrationMode
           }
-    a <- runWithJSContextSingleton (runPostBuildT (runHydrationDomBuilderT w builderEnv events) postBuild) jsSing
+    a <- runWithJSContextSingleton (runPostBuildT (runHydrationDomBuilderT w builderEnv events)) jsSing
     return ((a, events), postBuildTriggerRef)
   replaceElementContents rootElement df
   liftIO $ processAsyncEvents events fc
@@ -332,19 +332,19 @@ attachImmediateWidget w = do
   hydrationMode <- liftIO $ newIORef HydrationMode_Immediate
   events <- newChan
   runDomHost $ do
-    ((result, postBuildTriggerRef), fc@(FireCommand fire)) <- hostPerformEventT $ w hydrationMode events
+    ((result, postBuildTriggerRef), fc) <- hostPerformEventT $ w hydrationMode events
     mPostBuildTrigger <- readRef postBuildTriggerRef
-    forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
+    forM_ mPostBuildTrigger $ \postBuildTrigger -> runFireCommand fc [postBuildTrigger :=> Identity ()]
     return (result, fc)
 
 processAsyncEvents :: EventChannel -> FireCommand DomTimeline DomHost -> IO ()
-processAsyncEvents events (FireCommand fire) = void $ forkIO $ forever $ do
+processAsyncEvents events fc = void $ forkIO $ forever $ do
   ers <- readChan events
   _ <- runDomHost $ do
     mes <- liftIO $ forM ers $ \(EventTriggerRef er :=> TriggerInvocation a _) -> do
       me <- readIORef er
       return $ fmap (\e -> e :=> Identity a) me
-    _ <- fire (catMaybes mes) $ return ()
+    _ <- runFireCommand fc (catMaybes mes)
     liftIO $ forM_ ers $ \(_ :=> TriggerInvocation _ cb) -> cb
   return ()
 
