@@ -33,16 +33,15 @@ import Language.Haskell.TH
 
 import GHCJS.DOM.Types (JSContextRef, askJSM)
 #ifdef ghcjs_HOST_OS
-import qualified GHCJS.Buffer as JS
 import GHCJS.DOM.Types (MonadJSM)
+import qualified GHCJS.Buffer as JS
+#ifdef __GHCJS__
 import qualified GHCJS.DOM.Types as JS
 import qualified GHCJS.Foreign as JS
+#endif
 #if __GLASGOW_HASKELL__ < 900
 import qualified GHCJS.Foreign.Callback as JS
 import qualified GHCJS.Foreign.Callback.Internal (Callback (..))
-#else
-import qualified GHC.JS.Foreign.Callback as JS
-#endif
 import qualified JavaScript.Array as JS
 import qualified JavaScript.Array.Internal (SomeJSArray (..))
 import qualified JavaScript.Object as JS
@@ -54,6 +53,8 @@ import Data.Word
 import Foreign.C.Types
 import Foreign.Ptr
 import Text.Encoding.Z
+#endif
+
 #else
 import GHCJS.DOM.Types (MonadJSM (..), runJSM)
 #endif
