@@ -171,7 +171,7 @@ executable sortableList
         mtl,
         patch,
         random <1.3,
-        reflex <0.10,
+        reflex <0.11,
         reflex-dom,
         text <2.2,
         time,

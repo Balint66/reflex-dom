@@ -182,7 +182,6 @@ import Reflex.TriggerEvent.Base hiding (askEvents)
 import Reflex.TriggerEvent.Class
 
 import qualified Data.Dependent.Map as DMap
-import qualified Data.FastMutableIntMap as FastMutableIntMap
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -214,6 +213,7 @@ import GHCJS.DOM.Types (KeyboardEvent, ClipboardEvent)
 #endif
 
 import qualified Reflex.Patch.DMap as PatchDMap
+import qualified Reflex.Patch.IntMap as IntMap
 import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
 import qualified Reflex.TriggerEvent.Base as TriggerEventT (askEvents)
@@ -1797,7 +1797,7 @@ traverseIntMapWithKeyWithAdjust' = do
               writeIORef sRef $ ChildReadyState_Unready Nothing
               return ()
         p' <- PatchIntMap <$> IntMap.traverseWithKey new pInner
-        _ <- IntMap.traverseWithKey delete $ FastMutableIntMap.getDeletions p old
+        _ <- IntMap.traverseWithKey delete $ IntMap.getDeletions p old
         return $ applyAlways p' old
   hoistTraverseIntMapWithKeyWithAdjust traverseIntMapWithKeyWithAdjust updateChildUnreadiness $ \placeholders lastPlaceholder (PatchIntMap p) -> do
     phs <- liftIO $ readIORef placeholders

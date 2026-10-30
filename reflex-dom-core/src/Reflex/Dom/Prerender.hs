@@ -14,6 +14,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Render the first widget on the server, and the second on the client.
 module Reflex.Dom.Prerender
@@ -92,10 +94,19 @@ class (PrerenderClientConstraint t (Client m), Client (Client m) ~ Client m, Pre
   -- | Render the first widget on the server, and the second on the client. The
   -- hydration builder will run *both* widgets, updating the result dynamic at
   -- switchover time.
+  prerender' :: m a -> Client m a -> m (a , Event t a)
+  default prerender' :: (MonadSample t m) => m a -> Client m a -> m (a , Event t a)
+  prerender' server client = do
+    dynamic <- prerender server client
+    value <- sample $ current dynamic
+    pure (value , updated dynamic)
   prerender :: m a -> Client m a -> m (Dynamic t a)
+  default prerender :: (MonadHold t m) => m a -> Client m a -> m (Dynamic t a)
+  prerender server client = uncurry holdDyn =<< prerender' server client
 
 instance (ReflexHost t, Adjustable t m, PrerenderBaseConstraints t m) => Prerender t (HydrationDomBuilderT GhcjsDomSpace t m) where
   type Client (HydrationDomBuilderT GhcjsDomSpace t m) = HydrationDomBuilderT GhcjsDomSpace t m
+  prerender' _ client = (, never) <$> client
   prerender _ client = pure <$> client
 
 instance (Adjustable t m, PrerenderBaseConstraints t m, ReflexHost t) => Prerender t (HydrationDomBuilderT HydrationDomSpace t m) where
@@ -104,7 +115,7 @@ instance (Adjustable t m, PrerenderBaseConstraints t m, ReflexHost t) => Prerend
   type Client (HydrationDomBuilderT HydrationDomSpace t m) = PostBuildT t (HydrationDomBuilderT GhcjsDomSpace t m)
   -- | Runs the server widget up until switchover, then replaces it with the
   -- client widget.
-  prerender server client = do
+  prerender' server client = do
     env <- HydrationDomBuilderT ask
     events <- askEvents
     doc <- askDocument
@@ -135,7 +146,7 @@ instance (Adjustable t m, PrerenderBaseConstraints t m, ReflexHost t) => Prerend
       HydrationMode_Hydrating -> addHydrationStep $ do
         liftIO . trigger <=< lift $ runHydrationDomBuilderT (runPostBuildT client) clientEnv events
         insertBefore df =<< deleteToPrerenderEnd doc
-    holdDyn a0 a'
+    pure (a0, a')
 
 newtype UnrunnableT t m a = UnrunnableT (ReaderT Void m a)
   deriving (Functor, Applicative, Monad, MonadTrans)
@@ -210,22 +221,27 @@ instance (Reflex t, Monad m) => DomRenderHook t (UnrunnableT t m) where
 instance (Reflex t, Monad m, MonadHold t m) => Prerender t (UnrunnableT t m) where
   type Client (UnrunnableT t m) = UnrunnableT t m
   prerender _ _ = unrunnable
+  prerender' _ _ = unrunnable
 
 instance (SupportsStaticDomBuilder t m) => Prerender t (StaticDomBuilderT t m) where
   type Client (StaticDomBuilderT t m) = UnrunnableT t m
-  prerender server _ = do
+  prerender' server _ = do
     _ <- commentNode $ CommentNodeConfig startMarker Nothing
     a <- server
     _ <- commentNode $ CommentNodeConfig endMarker Nothing
-    pure $ pure a
+    pure (a , never)
 
 instance (Prerender t m, Monad m) => Prerender t (ReaderT r m) where
   type Client (ReaderT r m) = ReaderT r (Client m)
+  prerender' server client = do
+    r <- ask
+    lift $ prerender' (runReaderT server r) (runReaderT client r)
   prerender server client = do
     r <- ask
     lift $ prerender (runReaderT server r) (runReaderT client r)
 
-instance (Prerender t m, Monad m, MonadFix m, Reflex t, Monoid w) => Prerender t (DynamicWriterT t w m) where
+
+instance (Prerender t m, MonadFix m, MonadSample t m, Monoid w) => Prerender t (DynamicWriterT t w m) where
   type Client (DynamicWriterT t w m) = DynamicWriterT t w (Client m)
   prerender server client = do
     x <- lift $ prerender (runDynamicWriterT server) (runDynamicWriterT client)
@@ -234,16 +250,15 @@ instance (Prerender t m, Monad m, MonadFix m, Reflex t, Monoid w) => Prerender t
     tellDyn w
     pure a
 
-instance (Prerender t m, Monad m, Reflex t, Semigroup w) => Prerender t (EventWriterT t w m) where
+instance (Prerender t m, MonadHold t m, Reflex t, Semigroup w) => Prerender t (EventWriterT t w m) where
   type Client (EventWriterT t w m) = EventWriterT t w (Client m)
-  prerender server client = do
-    x <- lift $ prerender (runEventWriterT server) (runEventWriterT client)
-    let (a, w') = splitDynPure x
-        w = switch $ current w'
-    tellEvent w
-    pure a
+  prerender' server client = do
+    ((a0, w0), ev) <- lift $ prerender' (runEventWriterT server) (runEventWriterT client)
+    let (aEv, wEv) = (fmap fst ev, fmap snd ev)
+    tellEvent =<< switchHold w0 wEv
+    pure (a0, aEv)
 
-instance (Prerender t m, MonadFix m, Reflex t) => Prerender t (RequesterT t request response m) where
+instance (Prerender t m, MonadFix m, MonadSample t m) => Prerender t (RequesterT t request response m) where
   type Client (RequesterT t request response m) = RequesterT t request response (Client m)
   prerender server client = mdo
     let fannedResponses = fanInt responses
@@ -266,16 +281,18 @@ instance (Prerender t m, MonadHold t m, Monad m, Reflex t, MonadFix m, Group q, 
 
 instance Prerender t m => Prerender t (InputDisabledT m) where
   type Client (InputDisabledT m) = InputDisabledT (Client m)
+  prerender' (InputDisabledT server) (InputDisabledT client) = InputDisabledT $ prerender' server client
   prerender (InputDisabledT server) (InputDisabledT client) = InputDisabledT $ prerender server client
 
 instance Prerender t m => Prerender t (HydratableT m) where
   type Client (HydratableT m) = HydratableT (Client m)
+  prerender' (HydratableT server) (HydratableT client) = HydratableT $ prerender' server client
   prerender (HydratableT server) (HydratableT client) = HydratableT $ prerender server client
 
 instance (Prerender t m, Monad m, ReflexHost t) => Prerender t (PostBuildT t m) where
   type Client (PostBuildT t m) = PostBuildT t (Client m)
-  prerender server client = PostBuildT $ 
-    prerender (runPostBuildT server) (runPostBuildT client)
+  prerender' server client = PostBuildT $ prerender' (runPostBuildT server) (runPostBuildT client)
+  prerender server client = PostBuildT $ prerender (runPostBuildT server) (runPostBuildT client)
 
 startMarker, endMarker :: Text
 startMarker = "prerender/start"
